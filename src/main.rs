@@ -20,24 +20,22 @@ use std::os::unix::io::{FromRawFd, AsRawFd};
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
 
+fn copy_str_to_cchar(dst: &mut [c_char], src: &str) {
+    for (d, s) in dst.iter_mut().zip(src.as_bytes().iter()) {
+        *d = *s as c_char;
+    }
+    *(dst.last_mut().unwrap()) = 0;
+}
+
 impl From<(&str, &str, &str)> for ngm_mkpeer {
     fn from(args: (&str, &str, &str)) -> Self {
         let (stype, sour, speer) = args;
-        let mut type_: [c_char; NG_TYPESIZ as usize] = [0; NG_TYPESIZ as usize];
-        let mut ourhook: [c_char; NG_HOOKSIZ as usize] = [0; NG_HOOKSIZ as usize];
+        let mut type_:    [c_char; NG_TYPESIZ as usize] = [0; NG_TYPESIZ as usize];
+        let mut ourhook:  [c_char; NG_HOOKSIZ as usize] = [0; NG_HOOKSIZ as usize];
         let mut peerhook: [c_char; NG_HOOKSIZ as usize] = [0; NG_HOOKSIZ as usize];
-        for (dst, src) in type_.iter_mut().zip(stype.as_bytes().iter()) {
-            *dst = *src as c_char;
-        }
-        type_[NG_TYPESIZ as usize - 1] = 0;  // just in case
-        for (dst, src) in ourhook.iter_mut().zip(sour.as_bytes().iter()) {
-            *dst = *src as c_char;
-        }
-        ourhook[NG_TYPESIZ as usize - 1] = 0;  // just in case
-        for (dst, src) in peerhook.iter_mut().zip(speer.as_bytes().iter()) {
-            *dst = *src as c_char;
-        }
-        peerhook[NG_TYPESIZ as usize - 1] = 0;  // just in case
+        copy_str_to_cchar(&mut type_,    &stype);
+        copy_str_to_cchar(&mut ourhook,  &sour);
+        copy_str_to_cchar(&mut peerhook, &speer);
         ngm_mkpeer { type_, ourhook, peerhook }
     }
 }
@@ -115,7 +113,7 @@ unsafe fn ng_alloc_recv_msg(csock: &ControlSocket) -> Result<(*mut ng_mesg, CStr
     let cs: c_int = csock.as_raw_fd();
     let mut respptr: *mut ng_mesg = ptr::null_mut();
 
-    let pathlayout = Layout::from_size_align(NG_PATHSIZ as usize, 1).unwrap();  // FIXME
+    let pathlayout = Layout::from_size_align(NG_PATHSIZ as usize, 1).unwrap();
     let pathbuf = alloc(pathlayout) as *mut c_char;
     let ret = NgAllocRecvMsg(cs, &mut respptr, pathbuf);
     let resppath = CStr::from_ptr(pathbuf).to_owned();
@@ -157,7 +155,6 @@ fn list_hooks(csock: &ControlSocket, path: &str) -> Result<(NodeInfo, Vec<LinkIn
     let respptr: *mut ng_mesg = command_response(csock, path, NGM_GENERIC_COOKIE as c_int, NGM_LISTHOOKS as c_int, parg, 0)?;
 
     // Pointer should not be null at this point (check?)
-    //let hdr = unsafe { (*respptr).header };
     Ok(unsafe {
         let pdata: *const hooklist = (*respptr).data.as_ptr().cast();
         let ninf = NodeInfo::try_from((*pdata).nodeinfo)?;
@@ -227,6 +224,6 @@ fn go(path: &str) -> Result<String, Error> {
 fn main() {
     match go("bridge:") {
         Err(e) => println!("error: {:?}", e),
-        Ok(s) => println!("{}", s)
+        Ok(s)  => println!("{}", s)
     }
 }
