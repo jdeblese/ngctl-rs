@@ -2,20 +2,22 @@
 #![allow(non_camel_case_types)]
 #![allow(non_snake_case)]
 
-use libc::free;
-use std::ptr;
-use std::alloc::{alloc, dealloc, Layout};
-use std::mem::size_of;
-use std::vec::Vec;
-use std::convert::TryFrom;
-use std::str::Utf8Error;
-use std::ffi::{CString, CStr};
-use std::os::raw::{c_char, c_int, c_ulong, c_void};
-use std::process::id;
-use std::result::Result;
 use errno::{Errno, errno};
+use libc::{free, c_char, c_int, c_ulong, c_void};
 use socket2::Socket;
-use std::os::unix::io::{FromRawFd, AsRawFd};
+use std::{
+    alloc::{alloc, dealloc, Layout},
+    convert::TryFrom,
+    env::args,
+    ffi::{CString, CStr},
+    mem::size_of,
+    os::unix::io::{FromRawFd, AsRawFd},
+    process::id,
+    result::Result,
+    str::Utf8Error,
+    ptr,
+    vec::Vec,
+};
 
 
 include!(concat!(env!("OUT_DIR"), "/bindings.rs"));
@@ -222,8 +224,18 @@ fn go(path: &str) -> Result<String, Error> {
 }
 
 fn main() {
-    match go("bridge:") {
-        Err(e) => println!("error: {:?}", e),
-        Ok(s)  => println!("{}", s)
+    let mut argv = args();
+    let prog = argv.next().unwrap();
+    match argv.next() {
+        None => println!("Usage: {} <path>", prog),
+        Some(path) => match go(&path) {
+            Ok(s)  => println!("{}", s),
+            Err(e) => match e {
+                Error::SystemError(e) => println!("fatal: {}", e),
+                Error::PathIsNotABridge => println!("fatal: given path is not a bridge instance"),
+                Error::InvalidUtf8(e) => println!("fatal: unable to convert bytes to unicode: {:?}", e),
+                Error::NulError(s) => println!("fatal: unable to convert string '{:?}' to null-terminated byte sequence", s),
+            }
+        }
     }
 }
